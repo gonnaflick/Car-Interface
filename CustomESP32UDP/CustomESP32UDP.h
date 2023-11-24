@@ -3,25 +3,25 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiUDP.h>
+#include <WiFiUdp.h>
 
 class CustomESP32UDP {
 public:
   CustomESP32UDP();
   void begin(const char* ssid, const char* password, const char* host, int remotePort, int localPort);
-  void sendAnalogData(int* pins, int numPins);
+  void sendData(int* data, int numVariables);
   void update(int delayMillis);
+
 private:
-  WiFiUDP udp;
   char ssid_[32];
-  char password_[64];
-  char host_[16];
+  char password_[32];
+  char host_[32];
   int remotePort_;
   int localPort_;
-  int* pins_;
-  int numPins_;
+  WiFiUDP udp;
+  int* data_;
+  int numVariables_;
   unsigned long lastSendTime;
-  int customDelay;
 };
 
 #endif

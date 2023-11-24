@@ -2,6 +2,8 @@
 
 CustomESP32UDP::CustomESP32UDP() {
   // Constructor
+  numVariables_ = 0;
+  data_ = nullptr;
 }
 
 void CustomESP32UDP::begin(const char* ssid, const char* password, const char* host, int remotePort, int localPort) {
@@ -23,23 +25,21 @@ void CustomESP32UDP::begin(const char* ssid, const char* password, const char* h
   Serial.println("Comunicación UDP iniciada.");
 }
 
-void CustomESP32UDP::sendAnalogData(int* pins, int numPins) {
-  pins_ = pins;
-  numPins_ = numPins;
+void CustomESP32UDP::sendData(int* data, int numVariables) {
+  data_ = data;
+  numVariables_ = numVariables;
 }
 
 void CustomESP32UDP::update(int delayMillis) {
   if (WiFi.status() == WL_CONNECTED && millis() - lastSendTime > delayMillis) {
     String data = "";
-    for (int i = 0; i < numPins_; i++) {
-      int value = analogRead(pins_[i]);
-      data += "Pin " + String(pins_[i]) + ": " + String(value) + ", ";
+    for (int i = 0; i < numVariables_; i++) {
+      data += String(data_[i]) + ", ";
     }
     
     udp.beginPacket(host_, remotePort_);
     udp.print(data);
     udp.endPacket();
     lastSendTime = millis();
-    Serial.println("Datos enviados por UDP.");
   }
 }
