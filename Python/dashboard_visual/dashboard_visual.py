@@ -2,9 +2,18 @@ import pygame
 import sys
 import math
 import time
+import socket
+import select
 
-# Inicializar Pygame
+# Initialize Pygame and Socket
 pygame.init()
+
+# Set up non-blocking UDP server
+host, port = "0.0.0.0", 15000
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server_socket.bind((host, port))
+server_socket.setblocking(False)
 
 # Configuración del display
 width, height = 1200, 880
@@ -130,6 +139,10 @@ def draw_dashboard(speedometer, fuel, belt_state, direction_left_state, directio
     # Actualizar la pantalla
     pygame.display.flip()
 
+def update_dashboard_from_udp(data):
+    # Parse the incoming data and update Pygame dashboard variables
+    pass
+
 # Establecer estados iniciales
 draw_dashboard(speedometer, fuel, belt_state, direction_left_state, direction_right_state, light_state)
 
@@ -143,6 +156,12 @@ while running:
             running = False
 
     keys = pygame.key.get_pressed()
+
+    # Check for incoming UDP data
+    ready = select.select([server_socket], [], [], 0.1)[0]
+    if ready:
+        data, addr = server_socket.recvfrom(1024)
+        update_dashboard_from_udp(data)
 
     # Manejo de estados de botones
     # BOTON DEL CINTURON
@@ -187,5 +206,6 @@ while running:
     draw_dashboard(speedometer, fuel, belt_state, direction_left_state, direction_right_state, light_state)
 
 # Limpiar y cerrar el programa al salir
+server_socket.close()
 pygame.quit()
 sys.exit()
