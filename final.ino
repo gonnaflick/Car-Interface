@@ -1,10 +1,9 @@
 #include <WiFi.h>
 #include <CustomESP32UDP.h>
-#include <ezButton.h>  // the library to use for SW pin
 
-#define CLK_PIN 25  // ESP32 pin GPIO25 connected to the rotary encoder's CLK pin
-#define DT_PIN 26   // ESP32 pin GPIO26 connected to the rotary encoder's DT pin
-#define SW_PIN 27   // ESP32 pin GPIO27 connected to the rotary encoder's SW pin
+#define CLK 25
+#define DT 26
+#define SW 27
 
 #define DIRECTION_CW 0   // clockwise direction
 #define DIRECTION_CCW 1  // counter-clockwise direction
@@ -17,14 +16,15 @@ int localPort = 8888;
 
 WiFiServer server(23); // Puerto TCP para el servidor
 
-int dataBuffer[6]; // Tamaño para acomodar las lecturas de 4 pines
-int numData = sizeof(dataBuffer) / sizeof(dataBuffer[0]);
+int numData = 7;
+int dataBuffer[7];
 
 // Definir los pines de salida para los focos LED
 const int pinFocoIzquierda = 4; // Pin para el foco de la izquierda
 const int pinFocoDerecha = 5;   // Pin para el foco de la derecha
 const int pinLucesCortas = 15;   // Pin para las luces cortas
 const int pinLucesLargas = 21;    // Pin para las luces largas
+const int pinCinturon = 22;      // Pin para cinturon
 const int pinLucesFreno = 23;    // Pin para las luces freno
 const int pinAcelerador = 18; // Asumiendo D18 como acelerador
 const int pinFreno = 19;      // Asumiendo D19 como freno
@@ -43,41 +43,13 @@ float frenado = 0.05; // Cantidad de reducción de velocidad al frenar
 unsigned long tiempoAnterior = 0; // Para rastrear el tiempo desde el último ciclo
 unsigned long tiempoPresionadoAcelerador = 0; // Tiempo que el acelerador ha estado presionado
 
-volatile int counter = 0;
-volatile int direction = DIRECTION_CW;
-volatile unsigned long last_time;  // for debouncing
-int prev_counter;
-
-ezButton button(SW_PIN);  // create ezButton object that attach to pin 7;
+int counter = 0;
+int currentStateCLK;
+int lastStateCLK;
+String currentDIR = "";
+unsigned long lastButtonPress = 0;
 
 CustomESP32UDP esp32UDP;
-
-void IRAM_ATTR ISR_encoder() {
-  if ((millis() - last_time) < 10)  // debounce time is 50ms
-    return;
-
-  if (digitalRead(DT_PIN) == HIGH && counter > -50) {
-    // the encoder is rotating in counter-clockwise direction => decrease the counter
-    counter--;
-    direction = DIRECTION_CCW;
-  } else {
-    // the encoder is rotating in clockwise direction => increase the counter
-    if(counter < 50) {
-      counter++;
-      direction = DIRECTION_CW;
-    }
-  }
-
-  last_time = millis();
-}
-
-void sendClientMessage(const String& message) {
-  WiFiClient tempClient = server.available();
-  if (tempClient) {
-    tempClient.println(message);
-    tempClient.stop();
-  }
-}
 
 void setup() {
   Serial.begin(115200);
@@ -99,6 +71,7 @@ void setup() {
 
   pinMode(pinAcelerador, INPUT_PULLUP);
   pinMode(pinFreno, INPUT_PULLUP);
+  pinMode(pinCinturon, INPUT_PULLUP);
 
   // Inicializar los focos LED y el pinDefaultOn encendido
   digitalWrite(pinFocoIzquierda, LOW);
@@ -116,14 +89,10 @@ void setup() {
   Serial.println("Dirección IP: ");
   Serial.println(WiFi.localIP());
 
-  // configure encoder pins as inputs
-  pinMode(CLK_PIN, INPUT);
-  pinMode(DT_PIN, INPUT);
-  button.setDebounceTime(50);  // set debounce time to 50 milliseconds
-
-  // use interrupt for CLK pin is enough
-  // call ISR_encoder() when CLK pin changes from LOW to HIGH
-  attachInterrupt(digitalPinToInterrupt(CLK_PIN), ISR_encoder, RISING);
+  pinMode(CLK, INPUT);
+  pinMode(DT, INPUT);
+  pinMode(SW, INPUT_PULLUP);
+  lastStateCLK = digitalRead(CLK);
 }
 
 // Función para controlar las luces cortas y largas
@@ -150,14 +119,41 @@ void toggleLight(bool &estadoIntermitente, unsigned long &previousMillis, const 
 }
 
 void loop() {
-  button.loop();  // MUST call the loop() function first
+  int btnState = digitalRead(SW);
+
+  currentStateCLK = digitalRead(CLK);
+
+  if (currentStateCLK != lastStateCLK && currentStateCLK == 1) {
+
+    if (digitalRead(DT) == currentStateCLK) {
+      if (counter >= -50)
+        counter--;
+    }
+    else {
+      if (counter <= 50)
+        counter++;
+    }
+
+    Serial.println(counter);
+  }
+
+  lastStateCLK = currentStateCLK;
+
+
+  if (btnState == LOW) {
+    if (millis() - lastButtonPress > 50) {
+      Serial.println("Fish meter");
+    }
+
+    lastButtonPress = millis();
+  }
   // Leer el estado de los botones
   bool aceleradorPresionado = digitalRead(pinAcelerador) == LOW;
   bool frenoPresionado = digitalRead(pinFreno) == LOW;
 
   if (counter <= -33 && velocidad != 0 && estadoIntermitenteIzquierda == true && estadoIntermitenteDerecha != true || counter >= 33 && velocidad != 0 && estadoIntermitenteDerecha == true && estadoIntermitenteIzquierda != true) {
-    Serial.println("intermitente_izquierda_desactivada");
-    sendClientMessage("apagar");
+    esp32UDP.sendSignal(1);
+    esp32UDP.updateSignal(1);
   }
 
   // Escuchar clientes entrantes
@@ -245,14 +241,14 @@ if (!aceleradorPresionado && !frenoPresionado) {
   dataBuffer[1] = digitalRead(pinFocoDerecha);
   dataBuffer[2] = digitalRead(pinLucesCortas);
   dataBuffer[3] = digitalRead(pinLucesLargas);
-  dataBuffer[4] = velocidad;
-  dataBuffer[5] = counter;
-
-  // Actualiza numData para reflejar la cantidad de datos válidos
-  numData = 6;
+  dataBuffer[4] = !digitalRead(pinCinturon);
+  dataBuffer[5] = velocidad;
+  dataBuffer[6] = counter;
 
   // Envía los datos de lectura por UDP
-  esp32UDP.sendData(dataBuffer, 6);
+  esp32UDP.sendData(dataBuffer, numData);
 
   esp32UDP.update(1);
+
+  delay(1);
 }
