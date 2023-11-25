@@ -1,12 +1,13 @@
 import pygame
 import socket
-import time
+import threading
 
+# Configuración inicial de Pygame
 pygame.init()
 
+# Configuración para la conexión TCP
 ip = '192.168.1.23'
 port = 23
-
 estados = {
     "izquierda": False,
     "derecha": False,
@@ -15,6 +16,7 @@ estados = {
     "largas": False,
 }
 
+# Función para enviar comandos TCP
 def send_command(command):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
@@ -82,6 +84,33 @@ def draw_buttons():
         btn_text = font.render(text.capitalize(), True, GREY_TEXT if estados.get(text, False) else SOFT_BLUE)
         text_rect = btn_text.get_rect(center=btn.center)
         screen.blit(btn_text, text_rect)
+        
+# Función para el servidor UDP
+def udp_server():
+    host = "0.0.0.0"
+    port = 15000
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server_socket:
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind((host, port))
+        print(f"Escuchando en {host}:{port}")
+
+        while True:
+            data, addr = server_socket.recvfrom(1024)
+            signal = data.decode('utf-8')
+            # Verificar si el mensaje comienza con 's'
+            if signal.startswith('s'):
+                print(f"{signal}")
+                send_command('apagar')
+                estados['izquierda'] = False
+                estados['derecha'] = False
+            # Ignorar mensajes que comienzan con 'd'
+            elif signal.startswith('d'):
+                continue  # Esto ignorará el resto del código en el bucle y volverá al inicio
+
+# Iniciar el servidor UDP en un hilo separado
+thread_udp = threading.Thread(target=udp_server, daemon=True)
+thread_udp.start()
 
 done = False
 clock = pygame.time.Clock()
