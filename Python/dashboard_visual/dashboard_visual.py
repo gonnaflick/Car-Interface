@@ -3,22 +3,104 @@ import sys
 import math
 import time
 import socket
-import select
+import threading
 
-# Initialize Pygame and Socket
+# Inicializar Pygame
 pygame.init()
 
-# Set up non-blocking UDP server
-host, port = "0.0.0.0", 15000
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server_socket.bind((host, port))
-server_socket.setblocking(False)
+# Declaramos las variables globalmente
+direction_left_state = 0
+direction_right_state = 0
+light_state = 0
+pinLucesLargas = 0
+pinLucesCortas = 0
+belt_state = 0
+speedometer = 0
+counter = 0
+light_state = 0
+fuel = 100
+fuel_increment = 0
 
+# Ángulo inicial del medidor
+angle_start = -135 # Cambiado para que el ángulo inicial sea 0 grados
+angle_start_fuel = -90
+
+# Ángulo máximo del medidor
+angle_max = 150  # Cambiado para que el ángulo máximo sea 225 grados
+
+
+# Contadores para el botón BELT
+belt_counter = 0
+belt_delay = 5  # Ajustar según sea necesario
+
+
+def parse_signal(signal):
+    global direction_left_state, direction_right_state, pinLucesCortas, pinLucesLargas, belt_state, speedometer, counter, light_state
+    # Split the signal string into a list of values
+    values = signal.split()
+    
+    # Check if the signal starts with 'd' and has the correct number of values
+    if values[0] == 'd' and len(values) == 8:
+        # Assign the values to the variables by unpacking the list
+        _, pinFocoIzquierda, pinFocoDerecha, pinLucesCortas, pinLucesLargas, \
+        belt_state, speedometer, counter = values
+        
+        # Convert string values to integers
+        direction_left_state = int(pinFocoDerecha)
+        direction_right_state = int(pinFocoIzquierda)
+        pinLucesCortas = int(pinLucesCortas)
+        pinLucesLargas = int(pinLucesLargas)
+        belt_state = int(belt_state)
+        speedometer = int(speedometer)
+        counter = int(counter)
+        
+        if (pinLucesCortas == 0 & pinLucesLargas == 0):
+            light_state = 0            
+        elif (pinLucesCortas == 1 & pinLucesLargas == 1):
+            light_state = 2
+        else:
+            light_state = 1
+        
+        return (direction_right_state, direction_left_state, light_state,
+                belt_state, speedometer, counter)
+    else:
+        return None
+    
+# Función para el servidor UDP
+def udp_server():
+    host = "0.0.0.0"
+    port = 15000
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server_socket:
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind((host, port))
+        print(f"Escuchando en {host}:{port}")
+
+        while True:
+            data, addr = server_socket.recvfrom(1024)
+            signal = data.decode('utf-8')
+            # Verificar si el mensaje comienza con 's'
+            if signal.startswith('s'):
+                continue
+            # Ignorar mensajes que comienzan con 'd'
+            elif signal.startswith('d'):
+                parse_signal(signal)
+                print(f"Variables: {direction_left_state}, {direction_right_state}, {light_state}, {belt_state}, {speedometer}, {counter}")
+
+
+
+# Iniciar el servidor UDP en un hilo separado
+thread_udp = threading.Thread(target=udp_server, daemon=True)
+thread_udp.start()
 # Configuración del display
 width, height = 1200, 880
 screen = pygame.display.set_mode((width, height))
 pygame.display.set_caption("Dashboard")
+
+# Definir el centro y el radio de los medidores
+center_x_speed = width // 4
+center_x_fuel = 3 * width // 4
+center_y = height // 2
 
 # Cargar imágenes de fondo y aguja
 background_speed = pygame.image.load("background_speed.png")
@@ -41,37 +123,6 @@ light_off = pygame.image.load("light_off.png")
 light_low = pygame.image.load("light_low.png")
 light_high = pygame.image.load("light_high.png")
 
-# Definir el centro y el radio de los medidores
-center_x_speed = width // 4
-center_x_fuel = 3 * width // 4
-center_y = height // 2
-
-# Velocidad y combustible iniciales
-speedometer = 0
-fuel = 100
-
-# Estados de los botones
-belt_state = 0
-direction_right_state = 0
-direction_left_state = 0
-light_state = 0
-
-# Ángulo inicial del medidor
-angle_start = 0  # Cambiado para que el ángulo inicial sea 0 grados
-
-# Ángulo máximo del medidor
-angle_max = 225  # Cambiado para que el ángulo máximo sea 225 grados
-
-# Variables para el movimiento de los medidores
-speedometer_increment = 0
-fuel_increment = 0
-speedometer_direction = 1  # Dirección: 1 para incremento, -1 para decremento
-fuel_direction = -1  # Dirección: -1 para decremento, 1 para incremento
-
-# Contadores para el botón BELT
-belt_counter = 0
-belt_delay = 5  # Ajustar según sea necesario
-
 # Función para dibujar los medidores
 def draw_dashboard(speedometer, fuel, belt_state, direction_left_state, direction_right_state, light_state):
     # Limpiar la pantalla
@@ -82,8 +133,8 @@ def draw_dashboard(speedometer, fuel, belt_state, direction_left_state, directio
 
     # Dibujar el medidor de velocidad
     screen.blit(background_speed, (center_x_speed - background_speed.get_width() // 2, center_y - background_speed.get_height() // 2))
-    angle_speed = math.radians(angle_start + (speedometer / 200) * angle_max)
-    rotated_needle_speed = pygame.transform.rotate(needle_speed, -angle_speed * 1.8)
+    angle_speed = (angle_start + (speedometer / 200) * angle_max) % 360  # Grados para el medidor de velocidad
+    rotated_needle_speed = pygame.transform.rotate(needle_speed, -angle_speed)
     needle_rect_speed = rotated_needle_speed.get_rect(center=(center_x_speed, center_y))
     screen.blit(rotated_needle_speed, needle_rect_speed.topleft)
 
@@ -94,8 +145,8 @@ def draw_dashboard(speedometer, fuel, belt_state, direction_left_state, directio
 
     # Dibujar el medidor de combustible
     screen.blit(background_fuel, (center_x_fuel - background_fuel.get_width() // 2, center_y - background_fuel.get_height() // 2))
-    angle_fuel = math.radians(angle_start - (fuel / 100) * angle_max)
-    rotated_needle_fuel = pygame.transform.rotate(needle_fuel, -angle_fuel * 1.8)
+    angle_fuel = (angle_start_fuel + (fuel / 100) * 225)  # Grados para el medidor de combustible
+    rotated_needle_fuel = pygame.transform.rotate(needle_fuel, -angle_fuel)
     needle_rect_fuel = rotated_needle_fuel.get_rect(center=(center_x_fuel, center_y))
     screen.blit(rotated_needle_fuel, needle_rect_fuel.topleft)
 
@@ -139,9 +190,6 @@ def draw_dashboard(speedometer, fuel, belt_state, direction_left_state, directio
     # Actualizar la pantalla
     pygame.display.flip()
 
-def update_dashboard_from_udp(data):
-    # Parse the incoming data and update Pygame dashboard variables
-    pass
 
 # Establecer estados iniciales
 draw_dashboard(speedometer, fuel, belt_state, direction_left_state, direction_right_state, light_state)
@@ -150,62 +198,25 @@ draw_dashboard(speedometer, fuel, belt_state, direction_left_state, direction_ri
 running = True
 clock = pygame.time.Clock()
 
+# Esta es la tasa a la que el combustible se va a consumir
+fuel_consumption_rate = 0.1  # Puedes ajustar este valor como sea necesario
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-    keys = pygame.key.get_pressed()
+    if speedometer > 0:
+        # Asumiendo que 'speedometer' es un valor entre 0 y 200, ajusta el consumo de combustible en consecuencia
+        # El combustible se consumirá más rápido a mayores velocidades
+        fuel -= fuel_consumption_rate * (speedometer / 200)
+        fuel = max(fuel, 0)  # Asegurarse de que el combustible no sea negativo
 
-    # Check for incoming UDP data
-    ready = select.select([server_socket], [], [], 0.1)[0]
-    if ready:
-        data, addr = server_socket.recvfrom(1024)
-        update_dashboard_from_udp(data)
-
-    # Manejo de estados de botones
-    # BOTON DEL CINTURON
-    if keys[pygame.K_b]:
-        belt_counter += 1
-        if belt_counter >= belt_delay:
-            belt_counter = 0
-            belt_state = (belt_state + 1) % 3
-
-    direction_right_state = keys[pygame.K_RIGHT]
-    direction_left_state = keys[pygame.K_LEFT]
-
-    # BOTON DE LUCES
-    if keys[pygame.K_l]:
-        time.sleep(0.2)  # Agregar un ligero delay en el cambio de light
-        light_state = (light_state + 1) % 3
-
-    # Actualizar el movimiento del medidor de velocidad
-    if keys[pygame.K_UP]:
-        speedometer_increment += 1
-        speedometer_direction = 1
-    else:
-        speedometer_increment -= 1
-        speedometer_direction = -1
-
-    # Actualizar el movimiento del medidor de combustible
-    if keys[pygame.K_DOWN]:
-        fuel_increment += 1
-        fuel_direction = 1
-    else:
-        fuel_increment -= 1
-        fuel_direction = -1
-
-    # Aplicar incrementos y direcciones
-    speedometer = (speedometer + speedometer_increment * speedometer_direction) % 200
-    fuel = max(min(fuel + fuel_increment * fuel_direction, 100), 0)
-
-    # Controlar la velocidad del bucle
+    # Controlar la velocidad del bucle y actualizar la pantalla
     clock.tick(30)
-
-    # Dibujar el tablero con los nuevos estados
     draw_dashboard(speedometer, fuel, belt_state, direction_left_state, direction_right_state, light_state)
 
+
 # Limpiar y cerrar el programa al salir
-server_socket.close()
 pygame.quit()
 sys.exit()
