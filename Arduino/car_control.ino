@@ -10,7 +10,7 @@
 
 const char* ssid = "SSID";
 const char* password = "PASSWORD";
-const char* host = "PC DEVICE IP";
+const char* host = "BROADCAST IP";
 int remotePort = 15000;
 int localPort = 8888;
 
@@ -233,6 +233,10 @@ if (!aceleradorPresionado && !frenoPresionado) {
     digitalWrite(pinLucesFreno, HIGH); // Encender luces de frenado
   }
 
+  if (velocidad >= 200) {
+    velocidad = 200;
+  }
+
   // Actualizar el tiempo anterior
   tiempoAnterior = tiempoActual;
 
@@ -241,7 +245,7 @@ if (!aceleradorPresionado && !frenoPresionado) {
   dataBuffer[1] = digitalRead(pinFocoDerecha);
   dataBuffer[2] = digitalRead(pinLucesCortas);
   dataBuffer[3] = digitalRead(pinLucesLargas);
-  dataBuffer[4] = !digitalRead(pinCinturon);
+  dataBuffer[4] = digitalRead(pinCinturon);
   dataBuffer[5] = velocidad;
   dataBuffer[6] = counter;
 
@@ -249,6 +253,4 @@ if (!aceleradorPresionado && !frenoPresionado) {
   esp32UDP.sendData(dataBuffer, numData);
 
   esp32UDP.update(1);
-
-  delay(1);
 }
