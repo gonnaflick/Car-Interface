@@ -8,9 +8,9 @@
 #define DIRECTION_CW 0   // clockwise direction
 #define DIRECTION_CCW 1  // counter-clockwise direction
 
-const char* ssid = "INFINITUM63D9_2.4";
-const char* password = "0936263930";
-const char* host = "192.168.1.14";
+const char* ssid = "SSID";
+const char* password = "PASSWORD";
+const char* host = "PC DEVICE IP";
 int remotePort = 15000;
 int localPort = 8888;
 
