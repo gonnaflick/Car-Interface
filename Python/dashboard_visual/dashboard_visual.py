@@ -26,7 +26,7 @@ angle_start = -135 # Cambiado para que el ángulo inicial sea 0 grados
 angle_start_fuel = -90
 
 # Ángulo máximo del medidor
-angle_max = 150  # Cambiado para que el ángulo máximo sea 225 grados
+angle_max = 225  # Cambiado para que el ángulo máximo sea 225 grados
 
 
 # Contadores para el botón BELT
